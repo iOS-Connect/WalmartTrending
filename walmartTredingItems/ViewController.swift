@@ -7,19 +7,22 @@ let baseURL = "https://api.walmartlabs.com/v1/trends"
 
 class ViewController: UICollectionViewController {
 
-    var names = [String]()
-    var images = [String]()
+    var trendingItems = [TrendingItem]()
 
     override func viewDidLoad() {
         let layout = collectionView?.collectionViewLayout as! UICollectionViewFlowLayout
 
         layout.estimatedItemSize = CGSize(width: 175 , height: 50)
-        getItems()
+        
+        Networking.getItems { [weak self] (items) in
+            self?.trendingItems = items
+            self?.collectionView?.reloadData()
+        }
     }
 
     override func collectionView(collectionView: UICollectionView,
                                  numberOfItemsInSection section: Int) -> Int {
-        return names.count
+        return trendingItems.count
     }
 
     override func collectionView(collectionView: UICollectionView,
@@ -28,14 +31,18 @@ class ViewController: UICollectionViewController {
         let newCell = collectionView
                       .dequeueReusableCellWithReuseIdentifier("Cell",
                                                               forIndexPath: indexPath) as! LabelCell
-        newCell.label.text = names[indexPath.row]
-        fetchImage(images[indexPath.row]){ image in
+        newCell.label.text = trendingItems[indexPath.row].name
+        Networking.fetchImage(trendingItems[indexPath.row].imageURL){ image in
             newCell.image.image = image
         }
         return newCell
     }
 
-    func fetchImage(imageURL:String, completion: (image: UIImage?) -> ()) {
+}
+
+class Networking {
+
+    static func fetchImage(imageURL:String, completion: (image: UIImage?) -> ()) {
         //get image from from URL
 
         let task = NSURLSession.sharedSession().dataTaskWithURL(NSURL(string:imageURL)!) {
@@ -49,7 +56,7 @@ class ViewController: UICollectionViewController {
     }
 
 
-    func getItems() {
+    static func getItems(completion:([TrendingItem])->()) {
         let url = NSURL(string: baseURL+"?format=json&apiKey=\(APIKey)")!
         let task = NSURLSession.sharedSession()
             .dataTaskWithURL(url) { (data, response, error) in
@@ -66,21 +73,32 @@ class ViewController: UICollectionViewController {
                 guard let items = json["items"] as? NSArray else {
                     return print("No ites")
                 }
+                var newItems = [TrendingItem]()
                 for thing in items {
-                    guard let trendingItem = thing as? NSDictionary else {
-                        continue
-                    }
-
-                    let name = trendingItem["name"] as! String
-                    let image = trendingItem["thumbnailImage"] as! String
-                    self.names.append(name)
-                    self.images.append(image)
+                    guard let newItem = TrendingItem(json: thing) else { continue }
+                    newItems.append(newItem)
                 }
-                dispatch_async(dispatch_get_main_queue(), { 
-                    self.collectionView?.reloadData()
+
+                dispatch_async(dispatch_get_main_queue(), {
+                    completion(newItems)
                 })
         }
         task.resume()
+    }
+}
+
+struct TrendingItem {
+    var name: String
+    var imageURL: String
+
+    init?(json: AnyObject) {
+        guard let trendingItem = json as? NSDictionary,
+            let name = trendingItem["name"] as? String,
+            let image = trendingItem["thumbnailImage"] as? String else {
+            return nil
+        }
+        self.name = name
+        self.imageURL = image
     }
 }
 
